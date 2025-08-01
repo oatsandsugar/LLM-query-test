@@ -88,16 +88,10 @@ export class PostgreSQLDatabase {
         lat DOUBLE PRECISION,
         lon DOUBLE PRECISION,
         alt_baro INTEGER,
+        alt_baro_is_ground BOOLEAN,
         alt_geom INTEGER,
         gs DOUBLE PRECISION,
-        ias INTEGER,
-        tas INTEGER,
-        mach DOUBLE PRECISION,
         track DOUBLE PRECISION,
-        track_rate DOUBLE PRECISION,
-        roll DOUBLE PRECISION,
-        mag_heading DOUBLE PRECISION,
-        true_heading DOUBLE PRECISION,
         baro_rate INTEGER,
         geom_rate INTEGER,
         squawk CHAR(4),
@@ -105,11 +99,11 @@ export class PostgreSQLDatabase {
         category VARCHAR(10),
         nav_qnh DOUBLE PRECISION,
         nav_altitude_mcp INTEGER,
-        nav_altitude_fms INTEGER,
         nav_heading DOUBLE PRECISION,
         nav_modes TEXT[],
         nic INTEGER,
         rc INTEGER,
+        seen_pos DOUBLE PRECISION,
         version INTEGER,
         nic_baro INTEGER,
         nac_p INTEGER,
@@ -122,11 +116,9 @@ export class PostgreSQLDatabase {
         tisb TEXT[],
         messages INTEGER,
         seen DOUBLE PRECISION,
-        seen_pos DOUBLE PRECISION,
-        rssi DOUBLE PRECISION,
         alert INTEGER,
         spi INTEGER,
-        alt_baro_is_ground BOOLEAN,
+        rssi DOUBLE PRECISION,
         timestamp TIMESTAMP
       )
     `);
@@ -156,26 +148,36 @@ export class PostgreSQLDatabase {
     await this.query('DROP TABLE IF EXISTS performance_test');
   }
 
+  private mapFieldNamesToPostgreSQL(fieldName: string): string {
+    // Map camelCase field names to PostgreSQL lowercase conventions
+    const fieldMapping: { [key: string]: string } = {
+      'zorderCoordinate': 'zordercoordinate',
+      'dbFlags': 'dbflags'
+    };
+    return fieldMapping[fieldName] || fieldName;
+  }
+
   async insertBatch(records: any[]): Promise<void> {
     if (records.length === 0) return;
 
     const client = await this.pool.connect();
     try {
-      const columns = Object.keys(records[0]);
+      const originalColumns = Object.keys(records[0]);
+      const mappedColumns = originalColumns.map(col => this.mapFieldNamesToPostgreSQL(col));
       const maxParamsPerQuery = 60000; // PostgreSQL limit is ~65,535
-      const maxRecordsPerQuery = Math.floor(maxParamsPerQuery / columns.length);
+      const maxRecordsPerQuery = Math.floor(maxParamsPerQuery / originalColumns.length);
       
       // Split large batches to avoid PostgreSQL parameter limit
       for (let i = 0; i < records.length; i += maxRecordsPerQuery) {
         const chunk = records.slice(i, i + maxRecordsPerQuery);
         
         const placeholders = chunk.map((_, recordIndex) => 
-          `(${columns.map((_, colIndex) => `$${recordIndex * columns.length + colIndex + 1}`).join(', ')})`
+          `(${mappedColumns.map((_, colIndex) => `$${recordIndex * mappedColumns.length + colIndex + 1}`).join(', ')})`
         ).join(', ');
         
-        const values = chunk.flatMap(record => columns.map(col => record[col]));
+        const values = chunk.flatMap(record => originalColumns.map(col => record[col]));
         
-        const query = `INSERT INTO performance_test (${columns.join(', ')}) VALUES ${placeholders}`;
+        const query = `INSERT INTO performance_test (${mappedColumns.join(', ')}) VALUES ${placeholders}`;
         await client.query(query, values);
       }
     } finally {

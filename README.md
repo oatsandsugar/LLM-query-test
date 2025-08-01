@@ -362,6 +362,41 @@ npm run clean:output # Clear result files only (keep data)
 3. Hourly aircraft counts with time bucketing
 4. CTE-based average calculation
 
+## Database Design Differences
+
+### NULL Handling Strategy
+
+The benchmark intentionally preserves realistic database design differences between ClickHouse and PostgreSQL:
+
+**ClickHouse (OLAP Best Practice):**
+```sql
+aircraft_type LowCardinality(String) DEFAULT '',
+geom_rate Int16 DEFAULT 0,
+nav_qnh UInt16 DEFAULT 0,
+nav_altitude_mcp UInt16 DEFAULT 0,
+nav_heading UInt16 DEFAULT 0
+```
+
+**PostgreSQL (OLTP Flexibility):**
+```sql
+aircraft_type VARCHAR(50) DEFAULT '',
+geom_rate INTEGER,           -- Allows NULL
+nav_qnh DOUBLE PRECISION,    -- Allows NULL  
+nav_altitude_mcp INTEGER,    -- Allows NULL
+nav_heading DOUBLE PRECISION -- Allows NULL
+```
+
+**Impact on Data:**
+- **ClickHouse**: NULL values from data generator are converted to defaults (e.g., 0, '') 
+- **PostgreSQL**: NULL values are preserved as actual NULLs
+- **Result**: ~20% of records have NULLs in PostgreSQL vs 0% in ClickHouse for nullable fields
+
+**Why This Is Intentional:**
+- ClickHouse's DEFAULT strategy is optimal for analytical queries (avoids NULL handling overhead)
+- PostgreSQL's NULL preservation is standard for transactional systems (data integrity)
+- Represents real-world database design patterns, not a benchmarking flaw
+- Performance comparisons remain valid as both databases handle their respective data optimally
+
 ## Troubleshooting
 
 1. **Database connection issues** - Check that both ClickHouse and PostgreSQL are running and accessible

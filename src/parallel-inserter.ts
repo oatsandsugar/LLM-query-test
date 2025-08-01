@@ -52,29 +52,59 @@ export class ParallelInserter {
   }
 
   private async createWorker(): Promise<Worker> {
-    const workerPath = path.join(__dirname, 'insert-worker.js');
-    Logger.verbose(`Creating worker with path: ${workerPath}`);
-    
-    // Check if worker file exists
     const fs = require('fs');
-    if (!fs.existsSync(workerPath)) {
-      throw new Error(`Worker file not found: ${workerPath}`);
+    
+    // Worker threads require compiled JS files - determine correct path
+    let workerPath: string;
+    
+    // Check if we're in development mode with ts-node
+    const isDevelopment = process.env.NODE_ENV === 'development' || 
+                         process.argv[0].includes('ts-node') ||
+                         process.argv.some(arg => arg.includes('ts-node'));
+    
+    if (isDevelopment) {
+      // In development, use the built version from dist/
+      const distWorkerPath = path.resolve(__dirname, '../dist/insert-worker.js');
+      
+      if (!fs.existsSync(distWorkerPath)) {
+        throw new Error(
+          `Development mode requires built worker file. Run 'npm run build' first, then use 'npm run dev'. ` +
+          `Missing file: ${distWorkerPath}`
+        );
+      }
+      workerPath = distWorkerPath;
+    } else {
+      // In production, use the worker file in the same directory
+      workerPath = path.join(__dirname, 'insert-worker.js');
+      
+      if (!fs.existsSync(workerPath)) {
+        throw new Error(`Worker file not found: ${workerPath}`);
+      }
     }
+    
+    Logger.verbose(`Creating worker with path: ${workerPath} (development: ${isDevelopment})`);
     
     const worker = new Worker(workerPath);
     
+    // Configurable timeout (default 15s, can be set via env var)
+    const timeoutMs = parseInt(process.env.WORKER_TIMEOUT_MS || '15000');
+    
     return new Promise((resolve, reject) => {
       const timeout = setTimeout(() => {
-        reject(new Error('Worker initialization timeout'));
-      }, 10000);
+        reject(new Error(`Worker initialization timeout after ${timeoutMs}ms. Try increasing WORKER_TIMEOUT_MS environment variable.`));
+      }, timeoutMs);
       
       worker.once('online', () => {
         clearTimeout(timeout);
+        Logger.verbose(`Worker initialized successfully: ${workerPath}`);
         resolve(worker);
       });
+      
       worker.once('error', (error) => {
         clearTimeout(timeout);
-        reject(error);
+        const errorMsg = `Worker initialization failed: ${error instanceof Error ? error.message : String(error)} (Path: ${workerPath})`;
+        Logger.error(errorMsg);
+        reject(new Error(errorMsg));
       });
     });
   }
