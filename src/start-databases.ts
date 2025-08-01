@@ -1,8 +1,33 @@
 #!/usr/bin/env node
 import dotenv from 'dotenv';
 import { execSync } from 'child_process';
+import { ConfigValidator } from './config-validator';
 
 dotenv.config();
+
+// Validate environment variables early
+const validator = new ConfigValidator();
+
+// Validate Docker resource formats
+const clickhouseMemory = validator.validateMemory('CLICKHOUSE_MEMORY', '4g');
+const clickhouseCpus = validator.validateCpus('CLICKHOUSE_CPUS', '2');
+const postgresMemory = validator.validateMemory('POSTGRES_MEMORY', '4g');
+const postgresCpus = validator.validateCpus('POSTGRES_CPUS', '2');
+const postgresIndexedMemory = validator.validateMemory('POSTGRES_INDEXED_MEMORY', '4g');
+const postgresIndexedCpus = validator.validateCpus('POSTGRES_INDEXED_CPUS', '2');
+
+// Validate ports
+const postgresPort = validator.validatePort('POSTGRES_PORT', 5432);
+const postgresIndexedPort = validator.validatePort('POSTGRES_INDEXED_PORT', 5433);
+
+// Check for port conflicts
+validator.validatePortConflicts({
+  'POSTGRES_PORT': postgresPort,
+  'POSTGRES_INDEXED_PORT': postgresIndexedPort,
+});
+
+// Throw error if validation failed
+validator.throwIfInvalid();
 
 interface ContainerConfig {
   name: string;
@@ -24,32 +49,32 @@ class DatabaseStarter {
         ],
         additionalFlags: [
           '--ulimit', 'nofile=262144:262144',
-          '--memory', process.env.CLICKHOUSE_MEMORY || '4g',
-          '--cpus', process.env.CLICKHOUSE_CPUS || '2'
+          '--memory', clickhouseMemory,
+          '--cpus', clickhouseCpus
         ]
       },
       {
         name: 'postgres',
         image: 'postgres:15',
-        ports: [`${process.env.POSTGRES_PORT || '5432'}:5432`],
+        ports: [`${postgresPort}:5432`],
         environment: [
           `POSTGRES_PASSWORD=${process.env.POSTGRES_PASSWORD || 'postgres'}`
         ],
         additionalFlags: [
-          '--memory', process.env.POSTGRES_MEMORY || '4g',
-          '--cpus', process.env.POSTGRES_CPUS || '2'
+          '--memory', postgresMemory,
+          '--cpus', postgresCpus
         ]
       },
       {
         name: 'postgres-indexed',
         image: 'postgres:15',
-        ports: [`${process.env.POSTGRES_INDEXED_PORT || '5433'}:5432`],
+        ports: [`${postgresIndexedPort}:5432`],
         environment: [
           `POSTGRES_PASSWORD=${process.env.POSTGRES_INDEXED_PASSWORD || 'postgres'}`
         ],
         additionalFlags: [
-          '--memory', process.env.POSTGRES_INDEXED_MEMORY || '4g',
-          '--cpus', process.env.POSTGRES_INDEXED_CPUS || '2'
+          '--memory', postgresIndexedMemory,
+          '--cpus', postgresIndexedCpus
         ]
       }
     ];
@@ -95,9 +120,9 @@ class DatabaseStarter {
 
     // Show resource configuration
     console.log('📊 Resource Configuration:');
-    console.log(`   ClickHouse: ${process.env.CLICKHOUSE_MEMORY || '4g'} RAM, ${process.env.CLICKHOUSE_CPUS || '2'} CPUs`);
-    console.log(`   PostgreSQL: ${process.env.POSTGRES_MEMORY || '4g'} RAM, ${process.env.POSTGRES_CPUS || '2'} CPUs`);
-    console.log(`   PostgreSQL (indexed): ${process.env.POSTGRES_INDEXED_MEMORY || '4g'} RAM, ${process.env.POSTGRES_INDEXED_CPUS || '2'} CPUs\n`);
+    console.log(`   ClickHouse: ${clickhouseMemory} RAM, ${clickhouseCpus} CPUs`);
+    console.log(`   PostgreSQL: ${postgresMemory} RAM, ${postgresCpus} CPUs`);
+    console.log(`   PostgreSQL (indexed): ${postgresIndexedMemory} RAM, ${postgresIndexedCpus} CPUs\n`);
 
     const configs = this.getContainerConfigs();
 
@@ -120,8 +145,8 @@ class DatabaseStarter {
       console.log('\n🎉 All database containers started successfully!');
       console.log('\n📋 Container Status:');
       console.log('   • ClickHouse: http://localhost:8123');
-      console.log(`   • PostgreSQL (no index): localhost:${process.env.POSTGRES_PORT || '5432'}`);
-      console.log(`   • PostgreSQL (with index): localhost:${process.env.POSTGRES_INDEXED_PORT || '5433'}`);
+      console.log(`   • PostgreSQL (no index): localhost:${postgresPort}`);
+      console.log(`   • PostgreSQL (with index): localhost:${postgresIndexedPort}`);
       
       console.log('\n⏳ Waiting 10 seconds for containers to be ready...');
       await new Promise(resolve => setTimeout(resolve, 10000));

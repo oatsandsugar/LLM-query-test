@@ -1,45 +1,59 @@
 import dotenv from 'dotenv';
 import { PerformanceTester } from './performance-tester';
 import { ResultsReporter } from './reporter';
+import { ConfigValidator } from './config-validator';
 
 dotenv.config();
 
-// Configuration (merged from config.ts)
+// Validate and configure environment variables
+const validator = new ConfigValidator();
+
+// Configuration with validation
 export const config = {
   clickhouse: {
-    host: process.env.CLICKHOUSE_HOST || 'localhost',
-    port: parseInt(process.env.CLICKHOUSE_PORT || '8123'),
-    database: process.env.CLICKHOUSE_DATABASE || 'performance_test',
-    username: process.env.CLICKHOUSE_USERNAME || 'default',
-    password: process.env.CLICKHOUSE_PASSWORD || '',
-    memory: process.env.CLICKHOUSE_MEMORY || '4g',
-    cpus: process.env.CLICKHOUSE_CPUS || '2',
+    host: validator.validateString('CLICKHOUSE_HOST', 'localhost'),
+    port: validator.validatePort('CLICKHOUSE_PORT', 8123),
+    database: validator.validateString('CLICKHOUSE_DATABASE', 'performance_test'),
+    username: validator.validateString('CLICKHOUSE_USERNAME', 'default'),
+    password: validator.validateString('CLICKHOUSE_PASSWORD', ''),
+    memory: validator.validateMemory('CLICKHOUSE_MEMORY', '4g'),
+    cpus: validator.validateCpus('CLICKHOUSE_CPUS', '2'),
   },
   postgres: {
-    host: process.env.POSTGRES_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_PORT || '5432'),
-    database: process.env.POSTGRES_DATABASE || 'performance_test',
-    username: process.env.POSTGRES_USERNAME || 'postgres',
-    password: process.env.POSTGRES_PASSWORD || 'postgres',
-    memory: process.env.POSTGRES_MEMORY || '4g',
-    cpus: process.env.POSTGRES_CPUS || '2',
+    host: validator.validateString('POSTGRES_HOST', 'localhost'),
+    port: validator.validatePort('POSTGRES_PORT', 5432),
+    database: validator.validateString('POSTGRES_DATABASE', 'performance_test'),
+    username: validator.validateString('POSTGRES_USERNAME', 'postgres'),
+    password: validator.validateString('POSTGRES_PASSWORD', 'postgres'),
+    memory: validator.validateMemory('POSTGRES_MEMORY', '4g'),
+    cpus: validator.validateCpus('POSTGRES_CPUS', '2'),
   },
   postgresIndexed: {
-    host: process.env.POSTGRES_INDEXED_HOST || 'localhost',
-    port: parseInt(process.env.POSTGRES_INDEXED_PORT || '5433'),
-    database: process.env.POSTGRES_INDEXED_DATABASE || 'performance_test',
-    username: process.env.POSTGRES_INDEXED_USERNAME || 'postgres',
-    password: process.env.POSTGRES_INDEXED_PASSWORD || 'postgres',
-    memory: process.env.POSTGRES_INDEXED_MEMORY || '4g',
-    cpus: process.env.POSTGRES_INDEXED_CPUS || '2',
+    host: validator.validateString('POSTGRES_INDEXED_HOST', 'localhost'),
+    port: validator.validatePort('POSTGRES_INDEXED_PORT', 5433),
+    database: validator.validateString('POSTGRES_INDEXED_DATABASE', 'performance_test'),
+    username: validator.validateString('POSTGRES_INDEXED_USERNAME', 'postgres'),
+    password: validator.validateString('POSTGRES_INDEXED_PASSWORD', 'postgres'),
+    memory: validator.validateMemory('POSTGRES_INDEXED_MEMORY', '4g'),
+    cpus: validator.validateCpus('POSTGRES_INDEXED_CPUS', '2'),
   },
   test: {
-    datasetSize: parseInt(process.env.DATASET_SIZE || '10000000'),
-    batchSize: parseInt(process.env.BATCH_SIZE || '50000'),
-    parallelInsert: process.env.PARALLEL_INSERT === 'true',
-    parallelWorkers: parseInt(process.env.PARALLEL_WORKERS || '4'),
+    datasetSize: validator.validateInteger('DATASET_SIZE', 10000000, 1000, 100000000, 'Dataset size (1000-100M records)'),
+    batchSize: validator.validateInteger('BATCH_SIZE', 50000, 1000, 1000000, 'Batch size (1K-1M records)'),
+    parallelInsert: validator.validateString('PARALLEL_INSERT', 'false', ['true', 'false']) === 'true',
+    parallelWorkers: validator.validateInteger('PARALLEL_WORKERS', 4, 1, 16, 'Worker threads (1-16)'),
   },
 };
+
+// Validate port conflicts
+validator.validatePortConflicts({
+  'CLICKHOUSE_PORT': config.clickhouse.port,
+  'POSTGRES_PORT': config.postgres.port,
+  'POSTGRES_INDEXED_PORT': config.postgresIndexed.port,
+});
+
+// Throw error if validation failed
+validator.throwIfInvalid();
 
 // Help command (merged from help.ts)
 function showHelp(): void {
